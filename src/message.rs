@@ -22,7 +22,7 @@ impl Message {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct StandardRequest {
-    pub id: u64,
+    pub id: String,
     pub method: String,
     pub params: serde_json::Value,
 }

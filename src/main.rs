@@ -28,6 +28,9 @@ pub(crate) struct Args {
     /// Name of the person to greet
     #[arg(short, long)]
     pub address: String,
+
+    #[arg(short, long)]
+    pub wallet: String,
 }
 
 
@@ -58,7 +61,7 @@ async fn main() -> Result<(), Error> {
     task.await;
     tx1.send("sending from first handle1").await;
     task2.await;*/
-    let client = Client::connect(args.address).await;
+    let client = Client::connect(args.address, args.wallet).await;
     println!("client {:?}", client);
     //let mut stream = TcpStream::connect("btc.zsolo.bid:6057")?;
     /*let mut stream = TcpStream::connect("solo.ckpool.org:3333")?;

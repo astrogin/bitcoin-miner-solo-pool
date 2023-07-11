@@ -1,3 +1,4 @@
+use crate::message::Notification;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Miner {
@@ -5,5 +6,7 @@ pub(crate) struct Miner {
 }
 
 impl Miner {
+    pub fn new(msg: Notification) {
 
+    }
 }
