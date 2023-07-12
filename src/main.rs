@@ -78,7 +78,7 @@ async fn main() -> Result<(), Error> {
     };
 
     let subscribe_data: HashMap<String, Value> = serde_json::from_str(&buf_line).unwrap();
-    let extra_nonce1 = subscribe_data["result"][1].to_string();
+    let extra_nonce1 = subscribe_data["result"][1].to_string().replace("\"", "");
     let extra_nonce2 = "37f0cca00000";
     println!("CONNECT: {:?}", subscribe_data);
     let auth_message = "{\"params\": [\"bc1qwjuuut8cd23ws2ks5ppt5e59573d8c83hpql2s\", \"x\"], \"id\": 2, \"method\": \"mining.authorize\"}\n";
@@ -169,26 +169,6 @@ async fn main() -> Result<(), Error> {
     }*/
 
     Ok(())
-}
-
-fn sha256_string_to_le_bytes(input: &str) -> Result<[u8; 32], String> {
-    // Parse the input string as hexadecimal bytes
-    let bytes = match hex::decode(input) {
-        Ok(bytes) => bytes,
-        Err(_) => return Err(String::from("Invalid input string")),
-    };
-
-    if bytes.len() != 32 {
-        return Err(String::from("Input string must represent 32 bytes"));
-    }
-
-    // Reverse the byte order to convert to little-endian
-    let mut le_bytes = [0u8; 32];
-    for i in 0..32 {
-        le_bytes[i] = bytes[31 - i];
-    }
-
-    Ok(le_bytes)
 }
 
 fn build_header(
