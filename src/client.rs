@@ -1,23 +1,22 @@
 use std::collections::HashMap;
 use std::fs::read;
-use tokio::io::{ AsyncBufReadExt, AsyncWriteExt, Error, BufReader, BufStream, BufWriter};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, Error, BufReader, BufStream, BufWriter};
 use tokio::net::TcpStream;
 use std::{io, thread};
 use std::borrow::BorrowMut;
 use std::io::ErrorKind;
 use std::ops::DerefMut;
 use std::str::from_utf8;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use clap::builder::Str;
-use jsonrpsee::types::error::ErrorCode;
 use serde_json::Value;
 use serde::{Deserialize, Serialize};
 use tokio::net::tcp::{ReadHalf, WriteHalf};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::mpsc::Receiver;
-use crate::message::{Message, Response};
+use crate::message::{Message, Notification, Response};
 use crate::miner::Miner;
 
 #[derive(Serialize, Deserialize)]
@@ -36,23 +35,22 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn mine(address: String, threads: i8) {}
     pub async fn connect(address: String, wallet: String) -> Result<(), Error> {
         println!("{:?}", address);
-        let (mut reader, mut writer) = TcpStream::connect(address).await.unwrap().into_split();
+        let (mut reader, mut writer) = TcpStream::connect(address.clone()).await.unwrap().into_split();
         let mut buf_reader = BufReader::new(reader);
         let (pool_sender, mut pool_receiver) = mpsc::channel(32);
         let (mut miner_sender, mut miner_receiver) = mpsc::channel(32);
         let mut miner_sender = Arc::new(miner_sender);
-        //let mut miner_receiver = Arc::new(miner_receiver);
         let (cs, mut client_receiver) = mpsc::channel(32);
         let client_sender = Arc::new(cs);
+        let client_sender2 = Arc::clone(&client_sender);
         let extra_nonce_1 = Arc::new(Mutex::new(String::new()));
         let mut client = Client {
             client_sender: Arc::clone(&client_sender),
             wallet,
             extra_nonce1: extra_nonce_1.clone(),
-            miner_sender
+            miner_sender,
         };
         let subscribe_request = Request {
             id: String::from("mining.subscribe"),
@@ -78,32 +76,41 @@ impl Client {
             }
         });
 
-        thread::spawn(move || loop {
-            //println!("THREAD STARTED");
-            //let message = miner_receiver.try_recv().unwrap().clone();
-            match miner_receiver.try_recv() {
-                Ok(msg) => {
-                    println!("NONCE1 {:?}", extra_nonce_1.lock());
-                    println!("MSG IN THREAD {:?}", msg)
+        thread::spawn(move || {
+            let mut miner: Option<Miner> = None;
+            loop {
+                match miner_receiver.try_recv() {
+                    Ok(msg) => {
+                        let nonce1: &str = &*extra_nonce_1.lock().unwrap();
+                        let message: Notification = serde_json::from_str(&msg).unwrap();
+                        miner = Some(Miner::new(message, nonce1.to_string()));
+                    }
+                    Err(err) => {
+                        println!("err IN THREAD {:?}", err)
+                    }
                 }
-                Err(err) => {
-                    //println!("err IN THREAD {:?}", err)
+                if let Some(m) = &miner {
+                    match m.run() {
+                        None => {}
+                        Some(nonce) => {
+                            println!("FOUND CONGRATS");
+                            let submit_block_request = Request {
+                                id: String::from("1"),
+                                method: String::from("mining.submit"),
+                                params: vec![
+                                    address.clone(),
+                                    m.job_id.clone(),
+                                    m.extra_nonce_2.clone(),
+                                    m.ntime.clone(),
+                                    nonce
+                                ],
+                            };
+                            let submit_block_message = format!("{}\n", serde_json::to_string(&submit_block_request).unwrap());
+                            client_sender2.try_send(submit_block_message).expect("TODO: panic message");
+                        }
+                    }
                 }
             }
-            /*let stop_message: String = "stop".parse().unwrap();
-            if message == stop_message {
-                println!("Terminating.");
-                return None;
-            }
-            let nonce = miner.run();
-            match nonce {
-                None => {}
-                Some(str) => {
-                    return Some(str);
-                }
-            }*/
-
-            //return None;
         });
 
         loop {
@@ -112,18 +119,15 @@ impl Client {
             println!("Received message: {:?}", line);
             pool_sender.send(line).await.expect("TODO: panic message");
         }
-
-        Ok(())
     }
 
     async fn handle_pool_message(&mut self, raw_message: String) {
-        //println!("Message to parse {}", raw_message);
         let message: Message = serde_json::from_str(&raw_message).unwrap();
         match message {
             Message::OkResponse(msg) => {
                 match &msg.id[..] {
                     "mining.subscribe" => {
-                        self.extra_nonce1.lock().await.push_str(&*msg.result[1].to_string().replace("\"", ""));
+                        self.extra_nonce1.lock().expect("CANT BLOCK").push_str(&*msg.result[1].to_string().replace("\"", ""));
                         self.authorize().await;
                         println!("subscribed");
                     }
@@ -137,25 +141,16 @@ impl Client {
             Message::Notification(msg) => {
                 match &msg.method[..] {
                     "mining.notify" => {
-                        //let mut miner_receiver_channel = Arc::get_mut(&mut c).unwrap();
-                        /*let mut client = self.clone();
-                        let miner = Miner::new(msg, self.extra_nonce1.clone());msg*/
                         self.miner_sender.send(raw_message).await.expect("TODO: panic message");
-
-                        //println!("SELF {:?}", self);
-                        //let nonce = computation.join().unwrap();
-                        //println!("EXTRANONCE_1 {:?}", nonce);
                         println!("mining.notify");
                     }
                     _ => {}
                 }
-                //println!("Notification message {:?}", msg);
             }
             _ => {
                 println!("Unknown message");
             }
         }
-        //println!("{:?}", message);
     }
 
     async fn authorize(&self) {

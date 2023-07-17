@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha256::digest;
 use crate::message::Notification;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Miner {
     pub extra_nonce_1: String,
     pub extra_nonce_2: String,
@@ -122,23 +122,22 @@ impl Miner {
     }
 
     pub fn run(&self) -> Option<String> {
-        //loop {
-            let mut rng = rand::thread_rng();
-            let nonce: String = (0..4).map(|_| format!("{:02x}", rng.gen::<u8>())).collect();
-            let hash = Miner::build_header(
-                &self.version,
-                &self.prev_hash,
-                &nonce,
-                &self.ntime,
-                &self.merkle_root,
-                &self.nbits
-            );
-
-            if self.target > hash {
-                return Some(nonce)
-            }
+        let mut rng = rand::thread_rng();
+        let nonce: String = (0..4).map(|_| format!("{:02x}", rng.gen::<u8>())).collect();
+        println!("NONCE FROM MINER {:?}", nonce);
+        let hash = Miner::build_header(
+            &self.version,
+            &self.prev_hash,
+            &nonce,
+            &self.ntime,
+            &self.merkle_root,
+            &self.nbits,
+        );
+        println!("HASH FROM MINER {:?}", hash);
+        if self.target > hash {
+            return Some(nonce);
+        }
 
         None
-        //}
     }
 }
