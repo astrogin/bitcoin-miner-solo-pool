@@ -31,13 +31,20 @@ pub struct Client {
     client_sender: Arc<Sender<String>>,
     miner_sender: Arc<Sender<String>>,
     wallet: String,
-    extra_nonce1: Arc<Mutex<String>>,
+    extra_nonce1: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MinerDataMessage {
+    pub method: String,
+    pub params: Value,
+    pub nonce1: String,
 }
 
 impl Client {
     pub async fn connect(address: String, wallet: String) -> Result<(), Error> {
         println!("{:?}", address);
-        let (mut reader, mut writer) = TcpStream::connect(address.clone()).await.unwrap().into_split();
+        let (mut reader, mut writer) = TcpStream::connect(address).await.unwrap().into_split();
         let mut buf_reader = BufReader::new(reader);
         let (pool_sender, mut pool_receiver) = mpsc::channel(32);
         let (mut miner_sender, mut miner_receiver) = mpsc::channel(32);
@@ -45,11 +52,10 @@ impl Client {
         let (cs, mut client_receiver) = mpsc::channel(32);
         let client_sender = Arc::new(cs);
         let client_sender2 = Arc::clone(&client_sender);
-        let extra_nonce_1 = Arc::new(Mutex::new(String::new()));
         let mut client = Client {
             client_sender: Arc::clone(&client_sender),
-            wallet,
-            extra_nonce1: extra_nonce_1.clone(),
+            wallet: wallet.clone(),
+            extra_nonce1: String::new(),
             miner_sender,
         };
         let subscribe_request = Request {
@@ -81,12 +87,12 @@ impl Client {
             loop {
                 match miner_receiver.try_recv() {
                     Ok(msg) => {
-                        let nonce1: &str = &*extra_nonce_1.lock().unwrap();
-                        let message: Notification = serde_json::from_str(&msg).unwrap();
-                        miner = Some(Miner::new(message, nonce1.to_string()));
+                        let message: MinerDataMessage = serde_json::from_str(&msg).unwrap();
+                        let nonce1= message.nonce1.clone().to_string();
+                        miner = Some(Miner::new(message, nonce1));
                     }
                     Err(err) => {
-                        println!("err IN THREAD {:?}", err)
+                        //println!("err IN THREAD {:?}", err)
                     }
                 }
                 if let Some(m) = &miner {
@@ -98,15 +104,16 @@ impl Client {
                                 id: String::from("1"),
                                 method: String::from("mining.submit"),
                                 params: vec![
-                                    address.clone(),
+                                    wallet.clone(),
                                     m.job_id.clone(),
                                     m.extra_nonce_2.clone(),
                                     m.ntime.clone(),
-                                    nonce
+                                    nonce,
                                 ],
                             };
                             let submit_block_message = format!("{}\n", serde_json::to_string(&submit_block_request).unwrap());
                             client_sender2.try_send(submit_block_message).expect("TODO: panic message");
+                            break;
                         }
                     }
                 }
@@ -127,7 +134,7 @@ impl Client {
             Message::OkResponse(msg) => {
                 match &msg.id[..] {
                     "mining.subscribe" => {
-                        self.extra_nonce1.lock().expect("CANT BLOCK").push_str(&*msg.result[1].to_string().replace("\"", ""));
+                        self.extra_nonce1.push_str(&*msg.result[1].to_string().replace("\"", ""));
                         self.authorize().await;
                         println!("subscribed");
                     }
@@ -141,8 +148,12 @@ impl Client {
             Message::Notification(msg) => {
                 match &msg.method[..] {
                     "mining.notify" => {
-                        self.miner_sender.send(raw_message).await.expect("TODO: panic message");
-                        println!("mining.notify");
+                        let message: MinerDataMessage = MinerDataMessage {
+                            method: msg.method,
+                            params: msg.params,
+                            nonce1: self.extra_nonce1.clone(),
+                        };
+                        self.miner_sender.send(serde_json::to_string(&message).unwrap()).await.expect("TODO: panic message");
                     }
                     _ => {}
                 }

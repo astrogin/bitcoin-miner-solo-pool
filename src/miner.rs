@@ -5,6 +5,7 @@ use primitive_types::U256;
 use rand::Rng;
 use serde_json::Value;
 use sha256::digest;
+use crate::client::MinerDataMessage;
 use crate::message::Notification;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -21,7 +22,7 @@ pub(crate) struct Miner {
 }
 
 impl Miner {
-    pub fn new(msg: Notification, extra_nonce_1: String) -> Miner {
+    pub fn new(msg: MinerDataMessage, extra_nonce_1: String) -> Miner {
         let nbits: String = msg.params[6].to_string().replace("\"", "");
         // TODO make random
         let extra_nonce_2: String = "37f0cca00000".parse().unwrap();
@@ -124,7 +125,6 @@ impl Miner {
     pub fn run(&self) -> Option<String> {
         let mut rng = rand::thread_rng();
         let nonce: String = (0..4).map(|_| format!("{:02x}", rng.gen::<u8>())).collect();
-        println!("NONCE FROM MINER {:?}", nonce);
         let hash = Miner::build_header(
             &self.version,
             &self.prev_hash,
@@ -133,7 +133,7 @@ impl Miner {
             &self.merkle_root,
             &self.nbits,
         );
-        println!("HASH FROM MINER {:?}", hash);
+
         if self.target > hash {
             return Some(nonce);
         }
