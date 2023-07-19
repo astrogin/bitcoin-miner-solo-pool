@@ -15,27 +15,36 @@ use crate::miner::Miner;
 #[derive(Debug, Clone)]
 pub struct Client {
     client_sender: Arc<Sender<String>>,
-    miner_sender: Arc<Sender<String>>,
+    miner_sender: Sender<String>,
     wallet: String,
     extra_nonce1: String,
 }
 
 impl Client {
     pub async fn mine(address: String, wallet: String) -> Result<(), Box<dyn Error>> {
+        //connect to pool
         let (mut reader, mut writer) = TcpStream::connect(address).await?.into_split();
+        //create read buffer
         let mut buf_reader = BufReader::new(reader);
+        //this channel we are going to use for receive messages from stream pool
         let (pool_sender, mut pool_receiver) = mpsc::channel(32);
+        //this channel we are going to use for send/receive message from/to miner thread
         let (mut miner_sender, mut miner_receiver) = mpsc::channel(32);
-        let mut miner_sender = Arc::new(miner_sender);
+        //this channel we are going to send message to stream pool from our client
         let (cs, mut client_receiver) = mpsc::channel(32);
         let client_sender = Arc::new(cs);
+        //this sender we are going to use in miner thread
         let client_sender2 = Arc::clone(&client_sender);
+    }
+}
         let mut client = Client {
             client_sender: Arc::clone(&client_sender),
             wallet: wallet.clone(),
             extra_nonce1: String::new(),
             miner_sender,
         };
+
+
         let subscribe_request = Request {
             id: String::from("mining.subscribe"),
             method: String::from("mining.subscribe"),
