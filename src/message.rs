@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(untagged)]
@@ -55,6 +56,20 @@ impl From<Response> for Message {
             Message::OkResponse(res)
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MinerDataMessage {
+    pub method: String,
+    pub params: Value,
+    pub nonce1: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Request {
+    pub id: String,
+    pub method: String,
+    pub params: Vec<String>,
 }
 
 impl From<StandardRequest> for Message {

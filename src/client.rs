@@ -1,30 +1,16 @@
 use std::collections::HashMap;
-use std::fs::read;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, Error, BufReader, BufStream, BufWriter};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufStream, BufWriter};
 use tokio::net::TcpStream;
 use std::{io, thread};
-use std::borrow::BorrowMut;
-use std::io::ErrorKind;
-use std::ops::DerefMut;
-use std::str::from_utf8;
+use std::error::Error;
 use std::sync::{Arc, Mutex};
-use clap::builder::Str;
 use serde_json::Value;
 use serde::{Deserialize, Serialize};
-use tokio::net::tcp::{ReadHalf, WriteHalf};
 use tokio::sync::{mpsc};
-use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::mpsc::Receiver;
-use crate::message::{Message, Notification, Response};
+use crate::message::{Message, MinerDataMessage, Notification, Request, Response};
 use crate::miner::Miner;
-
-#[derive(Serialize, Deserialize)]
-struct Request {
-    id: String,
-    method: String,
-    params: Vec<String>,
-}
 
 #[derive(Debug, Clone)]
 pub struct Client {
@@ -34,17 +20,9 @@ pub struct Client {
     extra_nonce1: String,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct MinerDataMessage {
-    pub method: String,
-    pub params: Value,
-    pub nonce1: String,
-}
-
 impl Client {
-    pub async fn connect(address: String, wallet: String) -> Result<(), Error> {
-        println!("{:?}", address);
-        let (mut reader, mut writer) = TcpStream::connect(address).await.unwrap().into_split();
+    pub async fn mine(address: String, wallet: String) -> Result<(), Box<dyn Error>> {
+        let (mut reader, mut writer) = TcpStream::connect(address).await?.into_split();
         let mut buf_reader = BufReader::new(reader);
         let (pool_sender, mut pool_receiver) = mpsc::channel(32);
         let (mut miner_sender, mut miner_receiver) = mpsc::channel(32);
@@ -65,7 +43,7 @@ impl Client {
         };
 
         let subscribe_message = format!("{}\n", serde_json::to_string(&subscribe_request).unwrap());
-        client_sender.send(subscribe_message).await.expect("TODO: panic message");
+        client_sender.send(subscribe_message).await?;
 
         tokio::spawn(async move {
             loop {

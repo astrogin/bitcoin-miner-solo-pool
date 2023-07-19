@@ -5,8 +5,7 @@ use primitive_types::U256;
 use rand::Rng;
 use serde_json::Value;
 use sha256::digest;
-use crate::client::MinerDataMessage;
-use crate::message::Notification;
+use crate::message::{MinerDataMessage, Notification};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Miner {
