@@ -23,6 +23,6 @@ pub(crate) struct Args {
 async fn main() {
     // parse arguments
     let args = Args::try_parse().unwrap();
-
+    // mine
     Client::mine(args.address, args.wallet).await.unwrap();
 }

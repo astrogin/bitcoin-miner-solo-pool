@@ -22,10 +22,12 @@ pub(crate) struct Miner {
 
 impl Miner {
     pub fn new(msg: MinerDataMessage, extra_nonce_1: String) -> Miner {
+        //  Encoded current network difficulty
         let nbits: String = msg.params[6].to_string().replace("\"", "");
         // TODO make random
         let extra_nonce_2: String = "37f0cca00000".parse().unwrap();
 
+        //the target hash, we need find hash lower than that target
         let target = format!(
             "{}{}",
             &nbits[2..],
@@ -36,8 +38,10 @@ impl Miner {
         let target = format!("{}{}", "0".repeat(64 - target.len()), target);
         let target = U256::from_str_radix(target.as_str(), 16).unwrap();
 
+        // ID of the job. Use this ID while submitting share generated from this job.
         let job_id = msg.params[0].to_string().replace("\"", "");
 
+        //here we count current time
         let now: isize = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
@@ -48,6 +52,7 @@ impl Miner {
         let mut time_delta = server_time - now;
         let ntime = format!("{:x}", now + time_delta);
 
+        // here we build coinbase transaction. this required for building merkle tree
         let mut raw_coinbase = String::new();
         raw_coinbase.push_str(&msg.params[2].to_string().replace("\"", "")); //coinb1
         raw_coinbase.push_str(&extra_nonce_1.replace("\"", ""));
@@ -56,13 +61,14 @@ impl Miner {
 
         let coinbase_transaction = digest(digest(raw_coinbase));
 
+        //build merkle tree from available transactions
         let mut merkle_root = coinbase_transaction;
 
         for txid in msg.params[4].as_array().unwrap() {
             merkle_root.push_str(txid.to_string().as_str());
             merkle_root = digest(digest(merkle_root));
         }
-
+        // convert merkle tree to little endian bytes.
         let mut merkle_root_le =
             hex::encode(&Miner::sha256_string_to_le_bytes(merkle_root.as_str()).unwrap());
 
@@ -79,6 +85,7 @@ impl Miner {
         };
     }
 
+    // this function convert hex to little endian bytes
     fn sha256_string_to_le_bytes(input: &str) -> Result<[u8; 32], String> {
         // Parse the input string as hexadecimal bytes
         let bytes = match hex::decode(input) {
@@ -99,6 +106,7 @@ impl Miner {
         Ok(le_bytes)
     }
 
+    //this function build hash from header
     fn build_header(
         version: &String,
         prev_hash: &String,
@@ -123,6 +131,7 @@ impl Miner {
 
     pub fn run(&self) -> Option<String> {
         let mut rng = rand::thread_rng();
+        //here we generate random number
         let nonce: String = (0..4).map(|_| format!("{:02x}", rng.gen::<u8>())).collect();
         let hash = Miner::build_header(
             &self.version,
@@ -132,7 +141,7 @@ impl Miner {
             &self.merkle_root,
             &self.nbits,
         );
-
+        // here we compare found hash with target
         if self.target > hash {
             return Some(nonce);
         }
